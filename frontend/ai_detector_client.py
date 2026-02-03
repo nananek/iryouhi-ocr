@@ -18,31 +18,46 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
-# フィールド検出用のプロンプト
-DETECTION_PROMPT = """You are analyzing a Japanese medical receipt/invoice image.
-Identify the bounding box coordinates for each of the following fields.
-Return ONLY a valid JSON object with no additional text.
+# フィールド検出用のプロンプト（日本語・相対位置で返答）
+DETECTION_PROMPT = """あなたは日本の医療費領収書の画像を分析するアシスタントです。
 
-Fields to detect:
-- 領収金額 (Total receipt amount - usually the largest number, often in a box)
-- 自費金額 (Self-pay amount - patient's out-of-pocket cost)
-- 日付 (Date - receipt/visit date)
-- 受診者名 (Patient name)
-- 医療機関名 (Medical facility name - hospital/clinic name)
+以下の5つの項目について、画像内での位置を特定してください：
 
-The image dimensions are {width}x{height} pixels.
+1. **領収金額**: 合計金額（通常、最も大きく目立つ数字。「領収金額」「合計」などのラベル付近）
+2. **自費金額**: 患者の自己負担額（「負担金」「自己負担」「窓口負担」などのラベル付近）
+3. **日付**: 領収書の発行日または受診日（「発行日」「受診日」付近、または上部に記載）
+4. **受診者名**: 患者の氏名（「患者名」「氏名」「様」付近）
+5. **医療機関名**: 病院・クリニックの名前（通常、領収書の上部または下部に大きく記載）
 
-Return format (use pixel coordinates, x=0 is left edge, y=0 is top edge):
+## 回答形式
+
+各項目の位置を **画像全体に対するパーセンテージ（0〜100）** で指定してください。
+- `x`: 左端からの位置（%）
+- `y`: 上端からの位置（%）
+- `w`: 幅（%）
+- `h`: 高さ（%）
+
+例: 画像の左上1/4の領域なら x=0, y=0, w=25, h=25
+
+## 重要な注意点
+
+- 位置は **おおよそ** で構いません。少し広めに指定してください。
+- 該当する項目が見つからない場合は、その項目を省略してください。
+- **JSONのみ** を返してください。説明文やマークダウンは不要です。
+
+## 回答例
+
+```json
 {{
-  "領収金額": {{"x": <left>, "y": <top>, "w": <width>, "h": <height>}},
-  "自費金額": {{"x": <left>, "y": <top>, "w": <width>, "h": <height>}},
-  "日付": {{"x": <left>, "y": <top>, "w": <width>, "h": <height>}},
-  "受診者名": {{"x": <left>, "y": <top>, "w": <width>, "h": <height>}},
-  "医療機関名": {{"x": <left>, "y": <top>, "w": <width>, "h": <height>}}
+  "領収金額": {{"x": 60, "y": 30, "w": 35, "h": 8}},
+  "自費金額": {{"x": 60, "y": 45, "w": 30, "h": 6}},
+  "日付": {{"x": 10, "y": 5, "w": 25, "h": 5}},
+  "受診者名": {{"x": 10, "y": 15, "w": 30, "h": 5}},
+  "医療機関名": {{"x": 30, "y": 85, "w": 40, "h": 8}}
 }}
+```
 
-If a field cannot be found, omit it from the response.
-Return ONLY the JSON object, no markdown code blocks or explanations."""
+それでは、添付の医療費領収書画像を分析し、JSONのみで回答してください。"""
 
 
 class AIDetectorClient(ABC):
@@ -76,8 +91,8 @@ class AIDetectorClient(ABC):
         """サーバーへの接続確認"""
         pass
 
-    def _parse_response(self, text: str) -> dict[str, dict]:
-        """レスポンステキストからJSONを抽出してパース"""
+    def _parse_response(self, text: str, width: int, height: int) -> dict[str, dict]:
+        """レスポンステキストからJSONを抽出してパース（パーセンテージ→ピクセル変換）"""
         # デバッグ用に生レスポンスを格納
         try:
             self.last_response_text = text
@@ -91,7 +106,7 @@ class AIDetectorClient(ABC):
 
             data = json.loads(text)
 
-            # 結果を検証・正規化
+            # 結果を検証・正規化（パーセンテージからピクセルに変換）
             result = {}
             target_labels = ["領収金額", "自費金額", "日付", "受診者名", "医療機関名"]
             for label in target_labels:
@@ -102,11 +117,12 @@ class AIDetectorClient(ABC):
                         k in rect and isinstance(rect[k], (int, float))
                         for k in ["x", "y", "w", "h"]
                     ):
+                        # パーセンテージ（0〜100）からピクセルに変換
                         result[label] = {
-                            "x": int(rect["x"]),
-                            "y": int(rect["y"]),
-                            "w": int(rect["w"]),
-                            "h": int(rect["h"]),
+                            "x": int(rect["x"] * width / 100),
+                            "y": int(rect["y"] * height / 100),
+                            "w": int(rect["w"] * width / 100),
+                            "h": int(rect["h"] * height / 100),
                         }
             return result
         except (json.JSONDecodeError, KeyError, TypeError) as e:
@@ -142,11 +158,9 @@ class OllamaDetector(AIDetectorClient):
     def detect_fields(
         self, image_base64: str, width: int, height: int
     ) -> dict[str, dict]:
-        prompt = DETECTION_PROMPT.format(width=width, height=height)
-
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "prompt": DETECTION_PROMPT,
             "images": [image_base64],
             "stream": False,
             "options": {
@@ -164,7 +178,7 @@ class OllamaDetector(AIDetectorClient):
                 self.last_response_text = response_text
                 self.last_error = None
                 logger.info(f"Ollama response: {response_text[:500]}")
-                return self._parse_response(response_text)
+                return self._parse_response(response_text, width, height)
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"Ollama detection failed: {e}")
@@ -199,15 +213,13 @@ class OpenAIDetector(AIDetectorClient):
     def detect_fields(
         self, image_base64: str, width: int, height: int
     ) -> dict[str, dict]:
-        prompt = DETECTION_PROMPT.format(width=width, height=height)
-
         payload = {
             "model": self.model,
             "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": DETECTION_PROMPT},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -238,7 +250,7 @@ class OpenAIDetector(AIDetectorClient):
                 self.last_response_text = response_text
                 self.last_error = None
                 logger.info(f"OpenAI response: {response_text[:500]}")
-                return self._parse_response(response_text)
+                return self._parse_response(response_text, width, height)
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"OpenAI detection failed: {e}")
