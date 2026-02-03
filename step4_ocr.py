@@ -27,6 +27,8 @@ def show():
             
         ocr_engine = OCR(visualize=False, device="cuda")
         all_results = []
+        # 切り抜き画像を保存するリスト
+        cropped_images = []
         
         with st.status("OCR処理中...", expanded=True) as status:
             for p in st.session_state.pages:
@@ -42,9 +44,9 @@ def show():
 
                 template = st.session_state.templates.get(p["style_id"], {})
                 row = {"ページ": p["page_num"], "グループ": p["style_id"]}
+                page_crops = {"ページ": p["page_num"]}
                 
                 if isinstance(template, dict):
-                    st.subheader(f"ページ {p['page_num']}")
                     for label, coords in template.items():
                         text = extract_text_from_roi(words_data, coords)
                         text = text.strip()
@@ -57,19 +59,52 @@ def show():
                         x, y, w, h = coords['x'], coords['y'], coords['w'], coords['h']
                         cropped = img_bgr[y:y+h, x:x+w]
                         cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-                        
-                        col1, col2 = st.columns([2, 3])
-                        with col1:
-                            st.image(cropped_rgb, width=200)
-                        with col2:
-                            st.text_input(label, value=text, key=f"p{p['page_num']}_{label}", disabled=True)
+                        page_crops[label] = cropped_rgb
                 
                 all_results.append(row)
+                cropped_images.append(page_crops)
             status.update(label="OCR完了！", state="complete")
         st.session_state.ocr_results = all_results
+        st.session_state.cropped_images = cropped_images
 
+    # OCR結果の編集UI
     if st.session_state.ocr_results:
+        st.subheader("📝 読み取り結果の確認・編集")
+        st.info("読み取り結果に誤りがある場合は、下記のテキストボックスで修正してください。")
+        
+        cropped_images = st.session_state.get("cropped_images", [])
+        
+        for idx, row in enumerate(st.session_state.ocr_results):
+            page_num = row.get("ページ", idx + 1)
+            st.subheader(f"ページ {page_num}")
+            
+            # 対応する切り抜き画像を取得
+            page_crops = cropped_images[idx] if idx < len(cropped_images) else {}
+            
+            for label in row.keys():
+                if label in ["ページ", "グループ"]:
+                    continue
+                
+                input_key = f"edit_p{page_num}_{label}"
+                
+                col1, col2 = st.columns([2, 3])
+                with col1:
+                    if label in page_crops:
+                        st.image(page_crops[label], width=200)
+                    else:
+                        st.empty()
+                with col2:
+                    new_value = st.text_input(
+                        label, 
+                        value=row[label], 
+                        key=input_key
+                    )
+                    # 編集された値を反映
+                    st.session_state.ocr_results[idx][label] = new_value
+            
+            st.divider()
+
         st.subheader("📊 集計結果")
         df = pd.DataFrame(st.session_state.ocr_results)
-        st.dataframe(df, width="stretch")
+        st.dataframe(df, use_container_width=True)
         st.download_button("📥 CSVファイルをダウンロード", df.to_csv(index=False).encode('utf-8-sig'), "医療費集計.csv")
