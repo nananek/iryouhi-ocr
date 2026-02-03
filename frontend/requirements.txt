@@ -17,3 +17,7 @@ pandas>=2.2.0
 
 # --- HTTP Client ---
 requests>=2.31.0
+httpx>=0.25.0
+
+# --- AI Vision API (Optional) ---
+openai>=1.0.0

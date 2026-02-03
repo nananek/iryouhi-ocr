@@ -7,6 +7,15 @@ services:
       - "8501:8501"
     environment:
       - OCR_SERVER_URL=http://ocr-server:8000
+      # --- AI 自動検出設定 ---
+      # "ollama", "openai", または "disabled" を指定
+      - AI_DETECTOR_PROVIDER=disabled
+      # Ollama 設定（同梱 or 別マシン）
+      # - OLLAMA_BASE_URL=http://ollama:11434
+      # - OLLAMA_MODEL=llava:7b-v1.6-mistral-q4_K_M
+      # OpenAI 設定
+      # - OPENAI_API_KEY=sk-...
+      # - OPENAI_MODEL=gpt-4o
     depends_on:
       ocr-server:
         condition: service_healthy
@@ -40,6 +49,48 @@ services:
     networks:
       - app-network
 
+# =============================================================================
+# Ollama Vision Server (Optional - 別マシンで動かす場合は不要)
+# =============================================================================
+# RTX 3050 6GB で動作する Vision モデル用の Ollama サーバー
+# 使用する場合は以下のコメントを解除してください
+#
+#   ollama:
+#     image: ollama/ollama:latest
+#     ports:
+#       - "11434:11434"
+#     volumes:
+#       - ollama_data:/root/.ollama
+#     environment:
+#       - OLLAMA_KEEP_ALIVE=24h  # モデルをメモリに保持
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - driver: nvidia
+#               count: 1
+#               capabilities: [gpu]
+#     healthcheck:
+#       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+#       start_period: 30s
+#     restart: unless-stopped
+#     networks:
+#       - app-network
+#
+# モデルのインストール (初回のみ、コンテナ起動後に実行):
+#   docker compose exec ollama ollama pull llava:7b-v1.6-mistral-q4_K_M
+#
+# 別マシンで Ollama を動かす場合:
+#   1. 別マシンで ollama serve を起動 (OLLAMA_HOST=0.0.0.0 で外部公開)
+#   2. frontend の環境変数に OLLAMA_BASE_URL=http://<別マシンIP>:11434 を設定
+# =============================================================================
+
 networks:
   app-network:
     driver: bridge
+
+# volumes:
+#   ollama_data:  # Ollama サービスを有効化する場合はコメント解除
