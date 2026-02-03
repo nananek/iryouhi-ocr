@@ -28,20 +28,34 @@ def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[
     AI Vision モデルで自動検出を実行し、結果を session_state.templates に保存する
     
     Returns:
-        True: 検出成功（1つ以上のフィールドを検出）
-        False: 検出失敗または AI 未接続
+        (success, debug): 検出成功フラグとデバッグ情報
     """
     detector = get_detector()
     if detector is None:
         return False, {"response": None, "error": "AI detector not configured"}
     
-    # 画像をBase64に変換（オリジナルサイズで送信）
-    img_b64 = image_to_base64(pil_img)
-    width, height = pil_img.size
+    # オリジナルサイズを記録
+    orig_width, orig_height = pil_img.size
+    
+    # Vision モデル用に適度なサイズにリサイズ（長辺1200px程度）
+    # 大きすぎると細部に囚われ、小さすぎると文字が読めない
+    max_dim = 1200
+    if max(orig_width, orig_height) > max_dim:
+        ratio = max_dim / max(orig_width, orig_height)
+        new_width = int(orig_width * ratio)
+        new_height = int(orig_height * ratio)
+        resized_img = pil_img.resize((new_width, new_height), Image.LANCZOS)
+    else:
+        resized_img = pil_img
+        new_width, new_height = orig_width, orig_height
+    
+    # リサイズした画像をBase64に変換
+    img_b64 = image_to_base64(resized_img)
     
     try:
         with st.spinner("🤖 AI が読取位置を検出中..."):
-            detected = detector.detect_fields(img_b64, width, height)
+            # AI にはリサイズ後のサイズを伝える
+            detected = detector.detect_fields(img_b64, new_width, new_height)
 
         debug = detector.get_debug() if hasattr(detector, "get_debug") else {"response": None, "error": None}
 
@@ -49,10 +63,16 @@ def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[
             if style_id not in st.session_state.templates:
                 st.session_state.templates[style_id] = {}
 
-            # 検出結果をマージ（既存の手動設定は上書きしない場合はここで制御可能）
+            # 検出結果をオリジナルサイズにスケール変換してマージ
+            scale_back = orig_width / new_width
             for label, rect in detected.items():
                 if label in target_labels:
-                    st.session_state.templates[style_id][label] = rect
+                    st.session_state.templates[style_id][label] = {
+                        "x": int(rect["x"] * scale_back),
+                        "y": int(rect["y"] * scale_back),
+                        "w": int(rect["w"] * scale_back),
+                        "h": int(rect["h"] * scale_back),
+                    }
 
             # デバッグ情報も保存
             st.session_state.ai_debug[style_id] = debug
