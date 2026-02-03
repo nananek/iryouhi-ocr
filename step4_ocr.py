@@ -17,7 +17,7 @@ def show():
         </style>
     """, unsafe_allow_html=True)
     
-    if st.button("🚀 OCRを実行する", use_container_width=True, type="primary"):
+    if st.button("🚀 OCRを実行する", type="primary"):
         if not st.session_state.pages:
             st.error("読み込まれたページがありません。ステップ1からやり直してください。")
             return
@@ -60,7 +60,7 @@ def show():
                         
                         col1, col2 = st.columns([2, 3])
                         with col1:
-                            st.image(cropped_rgb, use_column_width=True)
+                            st.image(cropped_rgb, width=200)
                         with col2:
                             st.text_input(label, value=text, key=f"p{p['page_num']}_{label}", disabled=True)
                 
@@ -71,5 +71,5 @@ def show():
     if st.session_state.ocr_results:
         st.subheader("📊 集計結果")
         df = pd.DataFrame(st.session_state.ocr_results)
-        st.dataframe(df, use_container_width=True)
-        st.download_button("📥 CSVファイルをダウンロード", df.to_csv(index=False).encode('utf-8-sig'), "医療費集計.csv", use_container_width=True)
+        st.dataframe(df, width="stretch")
+        st.download_button("📥 CSVファイルをダウンロード", df.to_csv(index=False).encode('utf-8-sig'), "医療費集計.csv")

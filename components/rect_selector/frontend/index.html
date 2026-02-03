@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: transparent; }
+.wrapper { position: relative; display: inline-block; }
+#canvas { display: block; cursor: crosshair; border: 1px solid #ccc; border-radius: 4px; }
+.top-buttons { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+button {
+    padding: 10px 24px; border: none; border-radius: 6px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+button:active:not(:disabled) { transform: translateY(0); }
+.btn-confirm { background: #28a745; color: white; }
+.btn-confirm:hover:not(:disabled) { background: #218838; }
+.btn-confirm:disabled { background: #94d3a2; cursor: not-allowed; }
+.btn-cancel { background: #dc3545; color: white; }
+.btn-cancel:hover:not(:disabled) { background: #c82333; }
+.btn-cancel:disabled { background: #e4959c; cursor: not-allowed; }
+.btn-gray { background: #6c757d; color: white; }
+.btn-gray:hover:not(:disabled) { background: #5a6268; }
+.btn-gray:disabled { background: #adb5bd; cursor: not-allowed; opacity: 0.65; }
+.status { margin-top: 8px; padding: 8px 12px; border-radius: 4px; font-size: 13px; }
+.status-empty { background: #f8f9fa; color: #666; }
+.status-ok { background: #d4edda; color: #155724; }
+</style>
+</head>
+<body>
+<div class="top-buttons">
+    <button id="btnBack" class="btn-gray" disabled>← 戻る</button>
+    <button id="btnConfirm" class="btn-confirm" disabled>✓ 確定</button>
+    <button id="btnCancel" class="btn-cancel" disabled>✕ 取消</button>
+    <button id="btnSkip" class="btn-gray">スキップ →</button>
+</div>
+<div class="wrapper">
+    <canvas id="canvas"></canvas>
+</div>
+<div id="status" class="status status-empty">ドラッグして矩形を描画してください</div>
+
+<script src="streamlit-component-lib.js"></script>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const btnConfirm = document.getElementById('btnConfirm');
+const btnCancel = document.getElementById('btnCancel');
+const btnBack = document.getElementById('btnBack');
+const btnSkip = document.getElementById('btnSkip');
+const statusDiv = document.getElementById('status');
+
+let img = new Image();
+let rect = null;
+let SCALE = 1;
+
+// 操作モード
+const MODE_NONE = 0;
+const MODE_DRAW = 1;
+const MODE_MOVE = 2;
+const MODE_RESIZE = 3;
+
+let mode = MODE_NONE;
+let startX = 0, startY = 0;
+let resizeHandle = null; // 'tl', 'tr', 'bl', 'br'
+let dragOffsetX = 0, dragOffsetY = 0;
+
+const HANDLE_SIZE = 10;
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    if (rect) {
+        // 矩形の塗りつぶし
+        ctx.fillStyle = 'rgba(255, 100, 100, 0.3)';
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        // 矩形の枠線
+        ctx.strokeStyle = '#e00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        // リサイズハンドル
+        ctx.fillStyle = '#e00';
+        getHandles().forEach(h => {
+            ctx.fillRect(h.x - HANDLE_SIZE/2, h.y - HANDLE_SIZE/2, HANDLE_SIZE, HANDLE_SIZE);
+        });
+    }
+}
+
+function getHandles() {
+    if (!rect) return [];
+    return [
+        { id: 'tl', x: rect.x, y: rect.y },
+        { id: 'tr', x: rect.x + rect.w, y: rect.y },
+        { id: 'bl', x: rect.x, y: rect.y + rect.h },
+        { id: 'br', x: rect.x + rect.w, y: rect.y + rect.h }
+    ];
+}
+
+function getHandleAt(x, y) {
+    for (const h of getHandles()) {
+        if (Math.abs(x - h.x) <= HANDLE_SIZE && Math.abs(y - h.y) <= HANDLE_SIZE) {
+            return h.id;
+        }
+    }
+    return null;
+}
+
+function isInsideRect(x, y) {
+    if (!rect) return false;
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+}
+
+function updateCursor(x, y) {
+    const handle = getHandleAt(x, y);
+    if (handle === 'tl' || handle === 'br') {
+        canvas.style.cursor = 'nwse-resize';
+    } else if (handle === 'tr' || handle === 'bl') {
+        canvas.style.cursor = 'nesw-resize';
+    } else if (isInsideRect(x, y)) {
+        canvas.style.cursor = 'move';
+    } else {
+        canvas.style.cursor = 'crosshair';
+    }
+}
+
+function updateUI() {
+    const hasRect = rect !== null && rect.w > 0 && rect.h > 0;
+    btnConfirm.disabled = !hasRect;
+    btnCancel.disabled = !hasRect;
+    if (hasRect) {
+        statusDiv.className = 'status status-ok';
+        statusDiv.textContent = `✓ 矩形: (${Math.round(rect.x * SCALE)}, ${Math.round(rect.y * SCALE)}) - ${Math.round(rect.w * SCALE)}x${Math.round(rect.h * SCALE)}px`;
+    } else {
+        statusDiv.className = 'status status-empty';
+        statusDiv.textContent = 'ドラッグして矩形を描画してください';
+    }
+}
+
+function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function normalizeRect() {
+    // 幅や高さが負の場合に正規化
+    if (rect) {
+        if (rect.w < 0) {
+            rect.x += rect.w;
+            rect.w = -rect.w;
+        }
+        if (rect.h < 0) {
+            rect.y += rect.h;
+            rect.h = -rect.h;
+        }
+    }
+}
+
+canvas.addEventListener('mousedown', (e) => {
+    const pos = getPos(e);
+    
+    // ハンドル上？
+    const handle = getHandleAt(pos.x, pos.y);
+    if (handle) {
+        mode = MODE_RESIZE;
+        resizeHandle = handle;
+        startX = pos.x;
+        startY = pos.y;
+        return;
+    }
+    
+    // 矩形内部？
+    if (isInsideRect(pos.x, pos.y)) {
+        mode = MODE_MOVE;
+        dragOffsetX = pos.x - rect.x;
+        dragOffsetY = pos.y - rect.y;
+        return;
+    }
+    
+    // 新規描画
+    mode = MODE_DRAW;
+    startX = pos.x;
+    startY = pos.y;
+    rect = null;
+    draw();
+    updateUI();
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    const pos = getPos(e);
+    
+    if (mode === MODE_NONE) {
+        updateCursor(pos.x, pos.y);
+        return;
+    }
+    
+    if (mode === MODE_DRAW) {
+        rect = {
+            x: Math.min(startX, pos.x),
+            y: Math.min(startY, pos.y),
+            w: Math.abs(pos.x - startX),
+            h: Math.abs(pos.y - startY)
+        };
+    } else if (mode === MODE_MOVE) {
+        rect.x = pos.x - dragOffsetX;
+        rect.y = pos.y - dragOffsetY;
+        // キャンバス内に制限
+        rect.x = Math.max(0, Math.min(canvas.width - rect.w, rect.x));
+        rect.y = Math.max(0, Math.min(canvas.height - rect.h, rect.y));
+    } else if (mode === MODE_RESIZE) {
+        const dx = pos.x - startX;
+        const dy = pos.y - startY;
+        
+        if (resizeHandle === 'tl') {
+            rect.x += dx;
+            rect.y += dy;
+            rect.w -= dx;
+            rect.h -= dy;
+        } else if (resizeHandle === 'tr') {
+            rect.y += dy;
+            rect.w += dx;
+            rect.h -= dy;
+        } else if (resizeHandle === 'bl') {
+            rect.x += dx;
+            rect.w -= dx;
+            rect.h += dy;
+        } else if (resizeHandle === 'br') {
+            rect.w += dx;
+            rect.h += dy;
+        }
+        
+        startX = pos.x;
+        startY = pos.y;
+    }
+    
+    draw();
+    updateUI();
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (mode !== MODE_NONE) {
+        normalizeRect();
+        if (rect && rect.w < 5 && rect.h < 5) {
+            rect = null;
+        }
+        mode = MODE_NONE;
+        draw();
+        updateUI();
+    }
+});
+
+canvas.addEventListener('mouseleave', () => {
+    if (mode !== MODE_NONE) {
+        normalizeRect();
+        mode = MODE_NONE;
+        updateUI();
+    }
+});
+
+btnConfirm.addEventListener('click', () => {
+    if (rect && rect.w > 0 && rect.h > 0) {
+        Streamlit.setComponentValue({
+            action: 'confirm',
+            rect: {
+                x: Math.round(rect.x * SCALE),
+                y: Math.round(rect.y * SCALE),
+                w: Math.round(rect.w * SCALE),
+                h: Math.round(rect.h * SCALE)
+            }
+        });
+    }
+});
+
+btnCancel.addEventListener('click', () => { rect = null; draw(); updateUI(); });
+btnBack.addEventListener('click', () => { Streamlit.setComponentValue({ action: 'back' }); });
+btnSkip.addEventListener('click', () => { Streamlit.setComponentValue({ action: 'skip' }); });
+
+// Streamlitからのデータ受信
+function onRender(event) {
+    const data = event.detail;
+    
+    canvas.width = data.args.width;
+    canvas.height = data.args.height;
+    SCALE = data.args.scale;
+    
+    btnBack.disabled = !data.args.can_go_back;
+    
+    // 初期矩形があれば設定（元画像座標系→キャンバス座標系に変換）
+    if (data.args.initial_rect) {
+        const ir = data.args.initial_rect;
+        rect = {
+            x: ir.x / SCALE,
+            y: ir.y / SCALE,
+            w: ir.w / SCALE,
+            h: ir.h / SCALE
+        };
+    } else {
+        rect = null;
+    }
+    
+    img.onload = () => {
+        draw();
+        updateUI();
+        Streamlit.setFrameHeight();
+    };
+    img.src = 'data:image/png;base64,' + data.args.image_base64;
+}
+
+Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+Streamlit.setComponentReady();
+</script>
+</body>
+</html>

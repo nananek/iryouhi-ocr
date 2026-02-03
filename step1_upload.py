@@ -10,7 +10,7 @@ def show():
     st.info("医療費の領収書をスキャンしたPDFファイルを選択してください。複数ページ対応。")
     uploaded_file = st.file_uploader("PDFファイルを選択", type="pdf")
     
-    if uploaded_file and st.button("読み込んで次へ", use_container_width=True):
+    if uploaded_file and st.button("読み込んで次へ"):
         with st.spinner("PDFを画像に変換しています..."):
             doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
             temp_imgs = []
