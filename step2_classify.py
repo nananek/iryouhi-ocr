@@ -21,7 +21,7 @@ def show():
             for idx, p in enumerate(pages_in_style):
                 with cols[idx % 5]:
                     img_display = cv2.cvtColor(p["img"], cv2.COLOR_BGR2RGB)
-                    st.image(img_display, caption=f"{p['page_num']}ページ目", use_column_width=True)
+                    st.image(img_display, caption=f"{p['page_num']}ページ目", use_container_width=True)
                     
                     new_id = st.number_input(
                         f"グループ番号", 
