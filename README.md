@@ -13,24 +13,42 @@
 
 ## 必要環境
 
-- Python 3.10+
-- CUDA対応GPU（推奨）
+- Docker & Docker Compose（推奨）
+- または Python 3.10+ & CUDA対応GPU
 
-## インストール
+## セットアップ
+
+### Docker（推奨）
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+docker compose up --build
 ```
 
-## 使い方
+ブラウザで http://localhost:8501 にアクセス
 
+### ローカル実行
+
+OCRサーバーとフロントエンドを別々に起動する必要があります。
+
+ターミナル1（OCRサーバー / GPU必要）:
 ```bash
+pip install -r requirements-ocr.txt
+uvicorn ocr_server:app --host 0.0.0.0 --port 8000
+```
+
+ターミナル2（フロントエンド）:
+```bash
+pip install -r requirements-frontend.txt
 streamlit run app.py
 ```
 
-1. **PDF読込**: 医療費領収書をスキャンしたPDFをアップロード
+OCRサーバーが別ホストにある場合は、環境変数で接続先を指定できます:
+```bash
+export OCR_SERVER_URL=http://192.168.1.100:8000
+streamlit run app.py
+```
+
+## 使い方
 2. **様式の確認**: 自動グループ分けを確認・修正
 3. **読取位置の指定**: 各グループで領収金額・日付などの位置を矩形で囲む
 4. **OCR実行・出力**: 結果を確認してCSVダウンロード
