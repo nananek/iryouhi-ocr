@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements-ocr.txt .
-RUN pip install --no-cache-dir -r requirements-ocr.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY ocr_server.py .
+COPY *.py ./
 
 # Pre-download YomiToku models (optional but recommended for faster startup)
 # RUN python -c "from yomitoku import OCR; OCR(visualize=False, device='cpu')"

@@ -2,8 +2,7 @@ services:
   # Streamlit Frontend (CPU only)
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ./frontend
     ports:
       - "8501:8501"
     environment:
@@ -18,8 +17,7 @@ services:
   # OCR Server (GPU)
   ocr-server:
     build:
-      context: .
-      dockerfile: Dockerfile.ocr
+      context: ./server
     ports:
       - "8000:8000"
     environment:

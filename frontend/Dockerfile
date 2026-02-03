@@ -10,17 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements-frontend.txt .
-RUN pip install --no-cache-dir -r requirements-frontend.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py .
-COPY step1_upload.py .
-COPY step2_classify.py .
-COPY step3_wizard.py .
-COPY step4_ocr.py .
-COPY utils.py .
-COPY ocr_client.py .
+COPY *.py ./
 COPY components/ ./components/
 
 # Streamlit configuration

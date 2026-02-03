@@ -32,13 +32,15 @@ OCRサーバーとフロントエンドを別々に起動する必要があり�
 
 ターミナル1（OCRサーバー / GPU必要）:
 ```bash
-pip install -r requirements-ocr.txt
+cd server
+pip install -r requirements.txt
 uvicorn ocr_server:app --host 0.0.0.0 --port 8000
 ```
 
 ターミナル2（フロントエンド）:
 ```bash
-pip install -r requirements-frontend.txt
+cd frontend
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
@@ -46,6 +48,28 @@ OCRサーバーが別ホストにある場合は、環境変数で接続先を�
 ```bash
 export OCR_SERVER_URL=http://192.168.1.100:8000
 streamlit run app.py
+```
+
+## プロジェクト構成
+
+```
+├── frontend/          # Streamlitフロントエンド
+│   ├── app.py
+│   ├── step1_upload.py
+│   ├── step2_classify.py
+│   ├── step3_wizard.py
+│   ├── step4_ocr.py
+│   ├── utils.py
+│   ├── ocr_client.py
+│   ├── components/
+│   ├── requirements.txt
+│   └── Dockerfile
+├── server/            # OCRサーバー
+│   ├── ocr_server.py
+│   ├── requirements.txt
+│   └── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
 
 ## 使い方
