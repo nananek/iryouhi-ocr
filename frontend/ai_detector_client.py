@@ -48,6 +48,11 @@ Return ONLY the JSON object, no markdown code blocks or explanations."""
 class AIDetectorClient(ABC):
     """AI Vision 検出クライアントの抽象基底クラス"""
 
+    def __init__(self):
+        # 最後のレスポンステキストやエラーを保持（デバッグ用）
+        self.last_response_text: Optional[str] = None
+        self.last_error: Optional[str] = None
+
     @abstractmethod
     def detect_fields(
         self, image_base64: str, width: int, height: int
@@ -73,7 +78,9 @@ class AIDetectorClient(ABC):
 
     def _parse_response(self, text: str) -> dict[str, dict]:
         """レスポンステキストからJSONを抽出してパース"""
+        # デバッグ用に生レスポンスを格納
         try:
+            self.last_response_text = text
             # マークダウンのコードブロックを除去
             text = text.strip()
             if text.startswith("```"):
@@ -103,8 +110,14 @@ class AIDetectorClient(ABC):
                         }
             return result
         except (json.JSONDecodeError, KeyError, TypeError) as e:
+            # パース失敗は last_error に保存
+            self.last_error = str(e)
             logger.warning(f"Failed to parse AI response: {e}\nResponse: {text[:500]}")
             return {}
+
+    def get_debug(self) -> dict:
+        """デバッグ用情報を返す: last_response_text, last_error"""
+        return {"response": self.last_response_text, "error": self.last_error}
 
 
 class OllamaDetector(AIDetectorClient):
@@ -114,6 +127,8 @@ class OllamaDetector(AIDetectorClient):
         self.base_url = base_url or OLLAMA_BASE_URL
         self.model = model or OLLAMA_MODEL
         self.timeout = 120.0  # Vision モデルは時間がかかる
+        self.last_response_text = None
+        self.last_error = None
 
     def health_check(self) -> bool:
         try:
@@ -145,9 +160,13 @@ class OllamaDetector(AIDetectorClient):
                 resp.raise_for_status()
                 data = resp.json()
                 response_text = data.get("response", "")
+                # デバッグ情報を保持
+                self.last_response_text = response_text
+                self.last_error = None
                 logger.info(f"Ollama response: {response_text[:500]}")
                 return self._parse_response(response_text)
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"Ollama detection failed: {e}")
             return {}
 
@@ -160,6 +179,8 @@ class OpenAIDetector(AIDetectorClient):
         self.model = model or OPENAI_MODEL
         self.base_url = base_url or OPENAI_BASE_URL
         self.timeout = 60.0
+        self.last_response_text = None
+        self.last_error = None
 
     def health_check(self) -> bool:
         if not self.api_key:
@@ -214,9 +235,12 @@ class OpenAIDetector(AIDetectorClient):
                 resp.raise_for_status()
                 data = resp.json()
                 response_text = data["choices"][0]["message"]["content"]
+                self.last_response_text = response_text
+                self.last_error = None
                 logger.info(f"OpenAI response: {response_text[:500]}")
                 return self._parse_response(response_text)
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"OpenAI detection failed: {e}")
             return {}
 

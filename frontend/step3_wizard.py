@@ -23,7 +23,7 @@ def image_to_base64(pil_img: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 
-def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[str]) -> bool:
+def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[str]):
     """
     AI Vision モデルで自動検出を実行し、結果を session_state.templates に保存する
     
@@ -33,7 +33,7 @@ def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[
     """
     detector = get_detector()
     if detector is None:
-        return False
+        return False, {"response": None, "error": "AI detector not configured"}
     
     # 画像をBase64に変換（オリジナルサイズで送信）
     img_b64 = image_to_base64(pil_img)
@@ -42,22 +42,30 @@ def run_auto_detection(style_id: str, pil_img: Image.Image, target_labels: list[
     try:
         with st.spinner("🤖 AI が読取位置を検出中..."):
             detected = detector.detect_fields(img_b64, width, height)
-        
+
+        debug = detector.get_debug() if hasattr(detector, "get_debug") else {"response": None, "error": None}
+
         if detected:
             if style_id not in st.session_state.templates:
                 st.session_state.templates[style_id] = {}
-            
+
             # 検出結果をマージ（既存の手動設定は上書きしない場合はここで制御可能）
             for label, rect in detected.items():
                 if label in target_labels:
                     st.session_state.templates[style_id][label] = rect
-            
-            return True
+
+            # デバッグ情報も保存
+            st.session_state.ai_debug[style_id] = debug
+            return True, debug
         else:
-            return False
+            # 検出なしでもレスポンス/エラー情報を返す
+            st.session_state.ai_debug[style_id] = debug
+            return False, debug
     except Exception as e:
         logger.error(f"Auto detection failed: {e}")
-        return False
+        debug = {"response": None, "error": str(e)}
+        st.session_state.ai_debug[style_id] = debug
+        return False, debug
 
 
 def show():
@@ -69,6 +77,8 @@ def show():
         st.session_state.auto_detect_attempted = {}  # {style_id: True/False}
     if "auto_detect_failed" not in st.session_state:
         st.session_state.auto_detect_failed = {}  # {style_id: True/False}
+    if "ai_debug" not in st.session_state:
+        st.session_state.ai_debug = {}  # {style_id: {response, error}}
     
     if st.session_state.wiz_style_idx >= len(unique_styles):
         st.success("すべてのグループの設定が完了しました！")
@@ -97,9 +107,10 @@ def show():
         # 自動検出を試行
         st.info("🤖 AI による読取位置の自動検出を試みます...")
         
-        success = run_auto_detection(current_sid, pil_img, target_labels)
+        success, debug = run_auto_detection(current_sid, pil_img, target_labels)
         st.session_state.auto_detect_attempted[current_sid] = True
-        
+
+        # 保存されたデバッグ情報は st.session_state.ai_debug[current_sid]
         if success:
             detected_count = len(st.session_state.templates.get(current_sid, {}))
             st.success(f"✅ {detected_count} 個の項目を自動検出しました！確認・修正してください。")
@@ -107,13 +118,20 @@ def show():
         else:
             st.warning("⚠️ 自動検出に失敗しました。手動で位置を指定してください。")
             st.session_state.auto_detect_failed[current_sid] = True
-        
+
         st.rerun()
     
     # 自動検出失敗時のメッセージ（1回だけ表示）
     if current_sid in st.session_state.auto_detect_failed:
         if st.session_state.auto_detect_failed[current_sid] and is_first_field:
             st.warning("⚠️ このグループは自動検出に失敗したため、手動で位置を指定してください。")
+            # デバッグ情報を表示できるようにする
+            dbg = st.session_state.ai_debug.get(current_sid, {})
+            with st.expander("🔍 AI レスポンス / エラーを表示する"):
+                st.markdown("**Raw response:**")
+                st.text(dbg.get("response") or "(no response)")
+                st.markdown("**Error:**")
+                st.text(dbg.get("error") or "(no error)")
     
     # 進捗表示（静的なプログレスバー）
     total_fields = len(target_labels)
@@ -230,6 +248,8 @@ def show():
                 del st.session_state.auto_detect_attempted[current_sid]
             if current_sid in st.session_state.auto_detect_failed:
                 del st.session_state.auto_detect_failed[current_sid]
+            if current_sid in st.session_state.ai_debug:
+                del st.session_state.ai_debug[current_sid]
             st.session_state.wiz_field_idx = 0
             st.rerun()
 
