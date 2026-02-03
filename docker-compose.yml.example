@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   # Streamlit Frontend (CPU only)
   frontend:
@@ -14,7 +16,7 @@ services:
       # - OLLAMA_BASE_URL=http://ollama:11434
       # - OLLAMA_MODEL=llava:7b-v1.6-mistral-q4_K_M
       # OpenAI 設定
-      # - OPENAI_API_KEY=sk-...
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}    # set in CI/secrets or .env (DO NOT commit secrets)
       # - OPENAI_MODEL=gpt-4o
     depends_on:
       ocr-server:
@@ -50,7 +52,7 @@ services:
       - app-network
 
 # =============================================================================
-# Ollama Vision Server (Optional - 別マシンで動かす場合は不要)
+# Ollama Vision Server (Optional - run on a separate host if preferred)
 # =============================================================================
 # RTX 3050 6GB で動作する Vision モデル用の Ollama サーバー
 # 使用する場合は以下のコメントを解除してください
@@ -62,7 +64,7 @@ services:
 #     volumes:
 #       - ollama_data:/root/.ollama
 #     environment:
-#       - OLLAMA_KEEP_ALIVE=24h  # モデルをメモリに保持
+#       - OLLAMA_KEEP_ALIVE=24h  # keep model in memory
 #     deploy:
 #       resources:
 #         reservations:
@@ -93,4 +95,4 @@ networks:
     driver: bridge
 
 # volumes:
-#   ollama_data:  # Ollama サービスを有効化する場合はコメント解除
+#   ollama_data:  # Enable if Ollama service is used
