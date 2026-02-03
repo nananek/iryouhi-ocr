@@ -1,0 +1,47 @@
+services:
+  # Streamlit Frontend (CPU only)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - OCR_SERVER_URL=http://ocr-server:8000
+    depends_on:
+      ocr-server:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # OCR Server (GPU)
+  ocr-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.ocr
+    ports:
+      - "8000:8000"
+    environment:
+      - OCR_DEVICE=cuda
+      - MAX_CONCURRENT_OCR=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # OCRモデルのロードに時間がかかる
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

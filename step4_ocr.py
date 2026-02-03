@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 import cv2
-from yomitoku import OCR 
+from ocr_client import get_client
 from utils import extract_text_from_roi, parse_date
 
 def show():
@@ -17,6 +17,16 @@ def show():
         </style>
     """, unsafe_allow_html=True)
     
+    # OCRサーバーの状態確認
+    ocr_client = get_client()
+    try:
+        health = ocr_client.health_check()
+        if health.get("queue_size", 0) > 0:
+            st.warning(f"⏳ OCRサーバーは現在 {health['queue_size']}/{health['max_concurrent']} 件処理中です。順番待ちになる場合があります。")
+    except Exception as e:
+        st.error(f"❌ OCRサーバーに接続できません: {e}")
+        return
+    
     if st.button("🚀 OCRを実行する", type="primary"):
         if not st.session_state.pages:
             st.error("読み込まれたページがありません。ステップ1からやり直してください。")
@@ -25,7 +35,6 @@ def show():
             st.error("読取位置が設定されていません。ステップ3で設定してください。")
             return
             
-        ocr_engine = OCR(visualize=False, device="cuda")
         all_results = []
         # 切り抜き画像を保存するリスト
         cropped_images = []
@@ -33,14 +42,13 @@ def show():
         with st.status("OCR処理中...", expanded=True) as status:
             for p in st.session_state.pages:
                 img_bgr = p["img"]
-                results, _ = ocr_engine(img_bgr)
                 
+                # OCRサーバーにリクエスト
                 try:
-                    res_dict = results.model_dump()
-                except:
-                    res_dict = results.dict()
-
-                words_data = res_dict.get('words', [])
+                    words_data = ocr_client.run_ocr(img_bgr)
+                except Exception as e:
+                    st.error(f"OCRエラー (ページ {p['page_num']}): {e}")
+                    continue
 
                 template = st.session_state.templates.get(p["style_id"], {})
                 row = {"ページ": p["page_num"], "グループ": p["style_id"]}

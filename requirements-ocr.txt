@@ -1,0 +1,15 @@
+# OCR Server - GPU dependencies
+# --- API Framework ---
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# --- Image Processing ---
+opencv-python-headless>=4.9.0
+numpy<2.0.0
+Pillow>=10.2.0
+
+# --- AI/ML ---
+torch>=2.2.0
+torchvision>=0.17.0
+yomitoku==0.10.3

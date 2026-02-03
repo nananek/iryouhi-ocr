@@ -1,0 +1,19 @@
+# Frontend (Streamlit) - CPU only, no GPU dependencies
+# --- Core Framework ---
+streamlit==1.31.0
+streamlit-drawable-canvas==0.9.3
+Pillow>=10.2.0
+
+# --- Document & Image Processing ---
+pymupdf>=1.24.0
+opencv-python-headless>=4.9.0
+numpy<2.0.0
+
+# --- Clustering ---
+scikit-learn>=1.4.0
+
+# --- Data ---
+pandas>=2.2.0
+
+# --- HTTP Client ---
+requests>=2.31.0
